@@ -1,7 +1,7 @@
 <html>
 <head>
    <parm>
-      <allowOrder>Y</allowOrder>
+      <allowOrder>N</allowOrder>
       <daysToEnter>14</daysToEnter>
    </parm>
 </head>
@@ -26,6 +26,22 @@
 <div class='error'>
    <literal value='l_err' />
 </div>
+<div class='center'>
+      <$library uhp='u-note-lib' idx='1' name='uhp_recordAdd' 
+         regid='@client' id='labs' 
+         disponly='N' save='Y' readold='N' 
+         forcerender='Y' writeonfinal="N"
+         dstname-1='c.lo.date' dstlabel-1='Order Date' dstdef-1='$today' ui-1="$input type='text' edit='CAL' max-chars='10' width='10'"
+         dstname-2='c.lo.staff' dstlabel-2='Order Staff' dstdef-2='$operstaffid' ui-2="$input type='text' edit='DB``03' max-chars='6' width='6'" dstedit-2='Y' dstedittype-2='DB' dsteditnum-2='3'
+         dstname-3='c.lo.code' dstlabel-3='Order' ui-3="$select dct='9550' addblank='Y' addother='y'" dstedittype-3='dct' dsteditnum-3='9330' trigger_val='EKG' trigger='EKGrequest,ekg-request.html,,regid'
+         dstname-4='c.lo.desc' dstlabel-4='Details' ui-4="$input type='text'"
+         varname='objinfo' varptr='1' varptr2='100' 
+         addlabel='Add Order' 
+         printForm='/c0/test/rpt-md-labs.html' 
+         printLabel='Print Orders' 
+         btn='b_lib'/>
+</div>
+
 <div>
    <literal value='l_labRec' />
 </div>

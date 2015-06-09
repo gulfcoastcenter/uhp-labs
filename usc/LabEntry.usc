@@ -123,6 +123,12 @@ cl-lib         is b
 log-lib        is b
 usre-lib       is b
 grp-lib        is b
+u-note-lib[]   is x
+temp-lib       is b
+
+b_lib[,]       is x
+objinfo[,]     is x
+
 ' system libraries
 %include inc_sysLibDef
 
@@ -140,7 +146,12 @@ do while 1 = 1
                            endif
                         endif
       case "CANCEL"     return
-      case other        return
+      case other        
+         if $find("Y", b_lib[], 1, "F") > 0 then
+            i = 0
+            temp-lib = $row_num
+            temp-lib:submit($col_num, b_lib[$row_num],objinfo[])
+         endif
    endselect
 enddo
 
@@ -205,6 +216,9 @@ _preform:
       string = dst-lib:dst(lo_date[])
       if $castd(string) < $dateoffset($today,cutoffdays) then
          rc = 99
+      endif
+      if rc > 1 then 
+         'skip
       else
          lo_date[++i]   = string 'dst-lib:dst(lo_date[]    )
          lo_code[i]     = dst-lib:dst(lo_code[]    )
