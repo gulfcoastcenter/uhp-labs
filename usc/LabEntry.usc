@@ -1,0 +1,443 @@
+%define d_title "Lab Order Results"
+%define d_lo_date "C.LO.DATE"
+%define d_lo_code "C.LO.CODE"
+%define d_lo_name "C.LO.DESC"
+%define d_lo_staff "C.LO.STAFF"
+%define d_lo_resdate "C.LO.COMPDT"
+%define d_lo_resStaff "C.LO.COMPST"
+%define d_lo_gluc "C.LO.GLUC"
+%define d_lo_trig "C.LO.TRIG"
+%define d_lo_chol "C.LO.CHOL"
+%define d_lo_other "C.LO.OTHER"
+%define d_lo_othDesc "C.LO.OTHDESC"
+%define d_lo_nwnl "C.LO.NWNL"
+%define d_h_date "Order Date"
+%define d_h_code "Lab"
+%define d_h_name "Inst."
+%define d_h_staff "Order Staff"
+%define d_h_resdate "Result Date"
+%define d_h_resStaff "Result Entry Staff"
+%define d_h_gluc "Glucose Level"
+%define d_h_trig "Trigylceride Level"
+%define d_h_chol "Cholestoral Level"
+%define d_h_other "Other Level"
+%define d_h_othDesc "Other Level"
+%define d_h_nwnl "NWNL"
+%define d_ui_date "input type='text' edit='CAL'"
+%define d_ui_code "select dct='9550'"
+%define d_ui_name "input type='text'"
+%define d_ui_staff "input type='text' edit='DB``03' width='10'"
+%define d_ui_resdate "input type='text' edit='CAL' width='10'"
+%define d_ui_resStaff "input type='text' edit='DB``03'"
+%define d_ui_gluc "input type='text' width='10'"   
+%define d_ui_trig "input type='text' width='10'"   
+%define d_ui_chol "input type='text' width='10'"   
+%define d_ui_other "input type='text' width='10'"
+%define d_ui_othDesc "input type='text'"
+%define d_ui_nwnl "input type='checkbox' value='Y'"
+%define d_cutoffdays 365   
+%define d_formPath "/c0/forms/"
+%define d_daysToEnter 2
+%define d_staffDb 3
+%define d_resdate $TODAY
+%define d_resStaff $OPERSTAFFID
+%define d_selfEntryOnly "Y"
+%define d_allowOrder "N"
+%define d_code_dct 9550
+
+start LabEntry(parmfile, option, client, retcode)
+' Arguments
+parmfile       is x
+option         is x
+client         is x
+retcode        is x
+' Parameters / options               
+title          is x 
+template       is x     ' /path/to/template.html or template.html (uses d_formPath)
+viewOnly       is x     ' Y / N
+allowEdit      is x     ' Y / N
+allowOrder     is x     ' Y / N
+cutoffdays     is b     ' max # of days to display on page
+daysToEnter    is b     ' max # of days to enter results
+selfEntryOnly  is x     ' Y / N
+useGrp[]       is b     ' list of groups that allow group members to use this program
+useStaff[]     is x     ' list of staff that are allowed to use this program
+editGrp[]      is b     ' list of groups that allow group members to update all records
+editStaff[]    is x     ' list of staff that are allowed to update all records
+staffDB        is b
+code_dct       is b
+' value arrays
+lo_date[]      is x
+lo_code[]      is x
+lo_name[]      is x
+lo_staff[]     is x
+lo_resdate[]   is x
+lo_resStaff[]  is x
+lo_nwnl[]      is x     'Not Within Normal Limits flag
+lo_gluc[]      is x     'glucose results
+lo_trig[]      is x     'triglycerides results
+lo_chol[]      is x     'Cholestoral results
+lo_other[]     is x
+lo_othDesc[]   is x
+' Table column headers
+h_date         is x
+h_code         is x
+h_name         is x
+h_staff        is x
+h_resdate      is x
+h_resStaff     is x
+h_nwnl         is x
+h_gluc         is x
+h_trig         is x
+h_chol         is x
+h_other        is x
+h_othDesc      is x
+' ui definitions
+ui_date        is x
+ui_code        is x
+ui_name        is x
+ui_staff       is x
+ui_resdate     is x
+ui_resStaff    is x
+ui_nwnl        is x
+ui_gluc        is x
+ui_trig        is x
+ui_chol        is x 
+ui_other       is x
+ui_othDesc     is x
+' dst lists
+dsts[]         is x     ' dst list for reading
+d-vals[,]      is x     ' dst original values : stored for updating
+n-dst[]        is x     ' 'new' dst list for dsts to be updated
+n-vals[]       is x     ' 'new' dst values to update with
+' template vars
+l_labRec       is x     ' literal uhp tag value (ui table)
+l_err          is x     ' literal uhp tag for error display
+' misc
+string         is x
+i              is b
+rc             is b
+' libraries
+dst-lib        is b
+cl-lib         is b
+log-lib        is b
+usre-lib       is b
+grp-lib        is b
+' system libraries
+%include inc_sysLibDef
+
+gosub _init
+gosub _preform
+
+do while 1 = 1
+   uhp(template)
+   select $endbutton
+      case "SUBMIT"     gosub _validate
+                        if l_err !dp then
+                           gosub _save
+                           if l_err !dp then
+                              return
+                           endif
+                        endif
+      case "CANCEL"     return
+      case other        return
+   endselect
+enddo
+
+return
+
+_validate:
+   'server side validation here.
+   $clear(l_err)
+   rc = $find($varname(lo_resDate[]), dsts[], 1, "F")
+   i = 0
+   do while i++ < $maxarray(lo_resDate[])
+      if d-vals[i,rc] != lo_resDate[i] then
+         if usre-lib:check_date(daysToEnter, lo_resDate[i], "N") = "N" then
+            l_err += "<li>Outside of allowed Entry Time, Please request Override from your Supervisor</li>"
+         endif
+         if selfEntryOnly = "Y" and $operstaffid != lo_resStaff[i] then
+            l_err += "<li>Result Entry Staff Must be <i>Your</i> Staff ID</li>"
+         endif
+      endif
+   enddo
+   gosub _err
+goback
+
+_save:
+   rc = $find($varname(lo_resDate[]), dsts[], 1, "F")
+   i = 0
+   do while i++ < $maxarray(lo_resdate[])
+      'do we have a new results date?
+      if d-vals[i,rc] != lo_resDate[i] or allowEdit = "Y" then 'o_lo_resdate[i] != lo_resdate[i] then
+         ' load the new values
+         $clear(n-vals[])
+         rc = 0
+         n-vals[++rc] = lo_resdate[i] 
+         n-vals[++rc] = lo_resStaff[i]
+         n-vals[++rc] = lo_gluc[i]    
+         n-vals[++rc] = lo_trig[i]    
+         n-vals[++rc] = lo_chol[i]    
+         n-vals[++rc] = lo_nwnl[i]    
+         n-vals[++rc] = lo_other[i]   
+         n-vals[++rc] = lo_othdesc[i] 
+         ' update the record based on original values
+         if  dst-lib:updateByValue(client, dsts[], d-vals[i], n-dst[], n-vals[]) > 0 then
+            l_err += "<li>Unable to save Update - Please Contact MIS</li>"
+         endif
+      endif
+   enddo
+   gosub _err
+goback
+
+_err:
+   if l_err dp then
+      l_err = "<ul>" + l_err + "</ul>"
+   endif
+goback
+
+_preform:
+   ' build the results ui table
+   $clear(l_labRec)
+   i = 0 
+   rc = dst-lib:read(client)
+   do while rc < 2
+      string = dst-lib:dst(lo_date[])
+      if $castd(string) < $dateoffset($today,cutoffdays) then
+         rc = 99
+      else
+         lo_date[++i]   = string 'dst-lib:dst(lo_date[]    )
+         lo_code[i]     = dst-lib:dst(lo_code[]    )
+         lo_name[i]     = dst-lib:dst(lo_name[]    )
+         lo_staff[i]    = dst-lib:dst(lo_staff[]   )
+         lo_resdate[i]  = dst-lib:dst(lo_resdate[] )
+         lo_resStaff[i] = dst-lib:dst(lo_resStaff[])
+         lo_gluc[i]     = dst-lib:dst(lo_gluc[]    )
+         lo_trig[i]     = dst-lib:dst(lo_trig[]    )
+         lo_chol[i]     = dst-lib:dst(lo_chol[]    )
+         lo_nwnl[i]     = dst-lib:dst(lo_nwnl[]    )
+         lo_other[i]    = dst-lib:dst(lo_other[]   )
+         lo_othDesc[i]  = dst-lib:dst(lo_othDesc[] )
+         d-vals[i]      = dst-lib:dst(dsts[])
+         if allowOrder = "Y" then
+            l_labRec += "<tr><td><" + d_ui_date + " uhp='" 
+                      + $varname(lo_date[])  + "' idx='" + i + "' /></td><td><" + ui_code + " uhp='" 
+                      + $varname(lo_code[])  + "' idx='" + i + "' /></td><td><" + ui_name + " uhp='" 
+                      + $varname(lo_name[]) + "' idx='" + i + "' /></td><td><" + ui_staff  + " uhp='" 
+                      + $varname(lo_Staff[])     + "' idx='" + i + "' /></td><td>"
+         else
+            l_labRec += "<tr><td>" + lo_date[i] + "</td><td>"
+            string = $dct(code_dct, lo_code[i])
+            if string dp then
+               l_labRec += string
+            else
+               l_labRec += lo_code[i]
+            endif
+            (void)$dbalpha(staffdb, lo_staff[i], string)
+            l_labRec += "</td><td>" + lo_name[i] + "</td><td>(" + lo_staff[i] + ")" + string + "</td><td>"
+         endif
+         if (lo_resdate[i] !dp or allowEdit = "Y") and viewOnly != "Y" then
+'            don't default the date / staff so record updates only happen to records that staff enters:
+'            if lo_resDate[i] !dp then
+'               lo_resDate[i] = d_resDate
+'            endif
+'            if lo_reStaff[i] !dp then
+'               lo_resDate[i] = d_resStaff
+'            endif
+            if lo_othDesc[i] !dp then
+               lo_othDesc[i] = h_othDesc
+            endif
+            l_labRec += "<" + d_ui_resdate + " uhp='" 
+                      + $varname(lo_resdate[])  + "' idx='" + i + "' /></td><td><" + ui_resStaff + " uhp='" 
+                      + $varname(lo_resStaff[]) + "' idx='" + i + "' /></td><td><" + ui_nwnl     + " uhp='" 
+                      + $varname(lo_nwnl[])     + "' idx='" + i + "' /></td><td>"
+                      + "<table class='results'><tr><td>" + h_gluc + "</td><td><" + ui_gluc     + " uhp='" 
+                      + $varname(lo_gluc[]) + "' idx='" + i + "' /></td></tr><tr><td>" 
+                      + h_trig + "</td><td><" + ui_trig + " uhp='"
+                      + $varname(lo_trig[]) + "' idx='" + i + "' /></td></tr><tr><td>" 
+                      + h_chol + "</td><td><" + ui_chol + " uhp='"
+                      + $varname(lo_chol[]) + "' idx='" + i + "' /></td></tr><tr><td><" + ui_othDesc + " uhp='"
+                      + $varname(lo_othDesc[]) + "' idx='" + i + "'/></td><td><" + ui_other + " uhp='"
+                      + $varname(lo_other[]) + "' idx='" + i + "' /></td></tr></table></td>"
+         else
+            (void)$dbalpha(staffdb, lo_resStaff[i], string)
+            l_labRec += lo_resdate[i] + "</td><td>(" + lo_resStaff[i] + ")" + string + "</td><td>" 
+                     + lo_nwnl[i] + "</td><td>"
+                     + "<table class='results'><tr><td><b>"
+                     + h_gluc + "</b></td><td>" + lo_gluc[i] + "</td></tr><tr><td><b>" 
+                     + h_trig + "</b></td><td>" + lo_trig[i] + "</td></tr><tr><td><b>" 
+                     + h_chol + "</b></td><td>" + lo_chol[i] + "</td></tr><tr><td><b>"
+                     + lo_othDesc[i] + "</b></td><td>" + lo_other[i] + "</td></tr></table>"
+         endif
+         l_labRec += "</tr>"
+         rc = dst-lib:nextrec()
+      endif
+   enddo
+   if i > 0 then
+      l_labRec = "<table id='labrec'><tr>"
+         + "<th>" + h_date     + "</th>"
+         + "<th>" + h_code     + "</th>"
+         + "<th>" + h_name     + "</th>"
+         + "<th>" + h_staff    + "</th>"
+         + "<th>" + h_resdate  + "</th>"
+         + "<th>" + h_resStaff + "</th>"
+         + "<th>" + h_nwnl     + "</th>"
+         + "<th>Results</th>"
+         + l_labRec + "</table>"
+   else
+      l_labRec = "<span class='error center'>No Lab Orders on File</span>"
+   endif
+goback
+
+_init:
+   'required libraries
+   if $loadlib(dst-lib, "lib_DST") > 0 then return endif
+   if $loadlib(cl-lib, "lib_CLIENT") > 0 then return endif
+   if $loadlib(log-lib, "LIB-log") > 0 then return endif
+   if $loadlib(usre-lib, "lib_USREVENT") > 0 then return endif
+   if $loadlib(grp-lib, "lib_GROUPS") > 0 then return endif
+   'set defaults
+   title         = d_title
+   code_dct      = d_code_dct
+   lo_date[]     = d_lo_date
+   lo_code[]     = d_lo_code    
+   lo_name[]     = d_lo_name    
+   lo_staff[]    = d_lo_staff   
+   lo_resdate[]  = d_lo_resdate 
+   lo_resStaff[] = d_lo_resStaff
+   lo_gluc[]     = d_lo_gluc    
+   lo_trig[]     = d_lo_trig    
+   lo_chol[]     = d_lo_chol    
+   lo_nwnl[]     = d_lo_nwnl 
+   lo_other[]    = d_lo_other
+   lo_othDesc[]  = d_lo_othDesc    
+
+   h_date        = d_h_date    
+   h_code        = d_h_code
+   h_name        = d_h_name    
+   h_staff       = d_h_staff   
+   h_resdate     = d_h_resdate 
+   h_resStaff    = d_h_resStaff
+   h_nwnl        = d_h_nwnl
+   h_gluc        = d_h_gluc    
+   h_trig        = d_h_trig    
+   h_chol        = d_h_chol    
+   h_othDesc     = d_h_othDesc
+
+   ui_date       = d_ui_date 
+   ui_code       = d_ui_code
+   ui_name       = d_ui_name 
+   ui_staff      = d_ui_staff
+   ui_resdate    = d_ui_resdate 
+   ui_resStaff   = d_ui_resStaff
+   ui_nwnl       = d_ui_nwnl
+   ui_gluc       = d_ui_gluc    
+   ui_trig       = d_ui_trig    
+   ui_chol       = d_ui_chol  
+   ui_other      = d_ui_other
+   ui_othDesc    = d_ui_othDesc  
+   
+   cutoffdays    = d_cutoffdays
+   DaysToEnter   = d_daysToEnter
+   selfEntryOnly = d_selfEntryOnly
+   staffdb       = d_staffdb
+
+   'check parm
+   if $charx(parmfile,1) != "/" then
+      'parmfile?
+      string = $sysname + "/PARM/" + parmfile
+      if $checkfile(string) = 0 then
+         getParm(string)
+      else
+         parmfile = d_formPath + parmfile
+         if $checkfile(parmfile) = 0 then
+            Uhp_Option(parmfile)
+            if template !dp then
+               template = parmfile
+            endif
+         endif
+      endif
+   else
+      if $checkfile(parmfile) = 0 then
+         Uhp_Option(parmfile)
+         if template !dp then
+            template = parmfile
+         endif
+      endif
+   endif
+   'check option
+   if option dp then getoption(option) endif
+
+   'can we even use this script?
+   if useStaff[] dp or useGrp[] dp then
+      if $find($operstaffid, useStaff[], 1, "F") > 0 then
+         'ok
+      elseif grp-lib:group_member(useGrp[]) = "Y" then
+         'sure
+      else
+         'nope
+         std_handle:std_InfoPage("Unauthorized Request", "You are not Currently Authorized to Use this Program")
+         return
+      endif
+   endif
+
+   'forget it if there is no template
+   if template !dp then return endif
+   
+   'check for client
+   if cl-lib:pickClient(client) > 0 then return endif
+   
+   'make cutoffdays negative
+   cutoffdays *= -1
+   
+   'set edit option
+   if $find($operstaffid, editStaff[], 1, "F") > 0 then
+      allowEdit = "Y"
+   endif
+   if grp-lib:group_member(editGrp[]) = "Y" then
+      allowEdit = "Y"
+   endif
+   
+   (void)$arrPush(dsts[],lo_date[]    )
+   (void)$arrPush(dsts[],lo_code[]    )
+   (void)$arrPush(dsts[],lo_name[]    )
+   (void)$arrPush(dsts[],lo_staff[]   )
+   (void)$arrPush(dsts[],lo_resdate[] )
+   (void)$arrPush(dsts[],lo_resStaff[])
+   (void)$arrPush(dsts[],lo_gluc[]    )
+   (void)$arrPush(dsts[],lo_trig[]    )
+   (void)$arrPush(dsts[],lo_chol[]    )
+   (void)$arrPush(dsts[],lo_nwnl[]    )
+   (void)$arrPush(dsts[],lo_other[]   )
+   (void)$arrPush(dsts[],lo_othDesc[] )
+
+   (void)$arrPush(n-dst[],lo_resdate[] )
+   (void)$arrPush(n-dst[],lo_resStaff[])
+   (void)$arrPush(n-dst[],lo_gluc[]    )
+   (void)$arrPush(n-dst[],lo_trig[]    )
+   (void)$arrPush(n-dst[],lo_chol[]    )
+   (void)$arrPush(n-dst[],lo_nwnl[]    )
+   (void)$arrPush(n-dst[],lo_other[]   )
+   (void)$arrPush(n-dst[],lo_othDesc[] )
+   
+   (void)$setvarname(lo_date[]    ,lo_date[]    )
+   (void)$setvarname(lo_code[]    ,lo_code[]    )
+   (void)$setvarname(lo_name[]    ,lo_name[]    )
+   (void)$setvarname(lo_staff[]   ,lo_staff[]   )
+   (void)$setvarname(lo_resdate[] ,lo_resdate[] )
+   (void)$setvarname(lo_resStaff[],lo_resStaff[])
+   (void)$setvarname(lo_gluc[]    ,lo_gluc[]    )
+   (void)$setvarname(lo_trig[]    ,lo_trig[]    )
+   (void)$setvarname(lo_chol[]    ,lo_chol[]    )
+   (void)$setvarname(lo_nwnl[]    ,lo_nwnl[]    )
+   (void)$setvarname(lo_other[]   ,lo_other[]   )
+   (void)$setvarname(lo_othDesc[] ,lo_othDesc[] )
+   dst-lib:setDsts(dsts[])
+goback
+
+end LabEntry
+
+%include inc_uhp
+%include inc_GetParm
+%include inc_uhpOption
+%include inc_GetOption
